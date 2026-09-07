@@ -24,25 +24,13 @@ apt-get install -y ca-certificates curl gnupg lsb-release apt-transport-https cu
 # --- 1. ZABEZPIECZONE REPOZYTORIUM DOCKER (DLA SILNIKA DOCKER-CE I CONTAINERD) ---
 mkdir -p /etc/apt/keyrings
 
-DOCKER_URL_BASE="https://download.docker"
-DOCKER_URL_TLD=".com/linux/ubuntu"
-curl -fsSL "${DOCKER_URL_BASE}${DOCKER_URL_TLD}/gpg" | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+# --- DOCKER & CONTAINERD ---
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-DOCKER_REPO="deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] ${DOCKER_URL_BASE}${DOCKER_URL_TLD} $(lsb_release -cs) stable"
-echo "$DOCKER_REPO" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-
-# --- 2. ZABEZPIECZONE REPOZYTORIUM KUBERNETES (PKGS.K8S.IO) ---
-K8S_PKGS_HOST="https://pkgs.k8s.io"
-COLON=":"
-
-# Składanie pełnego linku GPG: https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key
-K8S_KEY_URL="${K8S_PKGS_HOST}/core${COLON}/stable${COLON}/${K8S_VERSION}/deb/Release.key"
-curl -fsSL "$K8S_KEY_URL" | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-
-# Składanie wpisu źródła APT (Zwróć uwagę na wymaganą spację i ukośnik ' /' na końcu)
-K8S_REPO_URL="${K8S_PKGS_HOST}/core${COLON}/stable${COLON}/${K8S_VERSION}/deb/"
-echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] ${K8S_REPO_URL} /" | tee /etc/apt/sources.list.d/kubernetes.list > /dev/null
+# --- KUBERNETES v1.31 ---
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /" | tee /etc/apt/sources.list.d/kubernetes.list > /dev/null
 
 # --- INSTALACJA PAKIETÓW ---
 apt-get update
