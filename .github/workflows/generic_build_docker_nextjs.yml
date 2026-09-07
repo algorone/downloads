@@ -1,0 +1,120 @@
+name: "Generic algorek Nextjs docker"
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: 'nazwa budowanego serwisu'
+        required: true
+        default: 'przegladarka'      
+      src_branch:
+        description: 'nazwa brancha lub tagu do budowy w SRC_REPOSITORY'
+        required: false
+        default: 'main'
+
+
+# =========================================================================
+# JAWNA KONFIGURACJA SZABLONU - ZMIENNE ŚRODOWISKOWE
+# =========================================================================
+env:
+  ORG_NAME: "algorone"       
+  APP_NAME: "${{ inputs.app_name }}"
+  
+  # Repozytorium z kodem źródłowym (Monorepo)
+  SRC_REPOSITORY: "algorone/algorek"  
+  SRC_BRANCH: "${{ inputs.src_branch }}"               
+  SRC_COMPONENT_PATH: "source-repo/${{ inputs.app_name }}/gui"   
+# =========================================================================
+jobs:
+  build-amd64:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write 
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Checkout remote apps monorepo
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ env.SRC_REPOSITORY }}
+          ref: ${{ env.SRC_BRANCH }}
+          path: 'source-repo'
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push AMD64 Docker Image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.SRC_COMPONENT_PATH }}
+          file: ${{ env.SRC_COMPONENT_PATH }}/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:${{ github.sha }}-amd64
+
+  build-arm64:
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write 
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Checkout remote apps monorepo
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ env.SRC_REPOSITORY }}
+          ref: ${{ env.SRC_BRANCH }}
+          path: 'source-repo'
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ARM64 Docker Image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.SRC_COMPONENT_PATH }}
+          file: ${{ env.SRC_COMPONENT_PATH }}/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:${{ github.sha }}-arm64
+
+  create-manifest:
+    runs-on: ubuntu-latest
+    needs: [build-amd64, build-arm64]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Link and push Multi-Arch Manifest
+        run: |
+          # Manifest dla SHA commitu
+          docker manifest create ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:${{ github.sha }} \
+            --amend ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:${{ github.sha }}-amd64 \
+            --amend ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:${{ github.sha }}-arm64
+          
+          # Manifest dla tagu 'latest'
+          docker manifest create ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:latest \
+            --amend ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:${{ github.sha }}-amd64 \
+            --amend ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:${{ github.sha }}-arm64
+          
+          docker manifest push ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:${{ github.sha }}
+          docker manifest push ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:latest
