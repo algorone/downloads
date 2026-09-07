@@ -98,3 +98,22 @@ if [ -f /etc/kubernetes/admin.conf ]; then
     export KUBECONFIG=/etc/kubernetes/admin.conf
 fi
 EOF
+
+# --- CZYSZCZENIE SYSTEMU I OPTYMALIZACJA ROZMIARU IMAGE ---
+# 1. Usunięcie pobranych archiwów pakietów .deb z pamięci podręcznej APT
+apt-get clean
+apt-get autoclean
+
+# 2. Usunięcie list pakietów i metadanych repozytoriów (zostaną pobrane na nowo przy pierwszym 'apt update' u użytkownika)
+rm -rf /var/lib/apt/lists/*
+
+# 3. Czyszczenie katalogów tymczasowych
+rm -rf /tmp/*
+rm -rf /var/tmp/*
+
+# 4. Czyszczenie logów systemowych, aby nie powielały się w dystrybucji
+find /var/log -type f -exec truncate -s 0 {} \;
+
+# 5. Usunięcie pamięci podręcznej kluczy i certyfikatów pobierania (jeśli powstały)
+rm -rf /root/.cache
+
