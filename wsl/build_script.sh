@@ -22,14 +22,40 @@ apt-get update
 apt-get install -y ca-certificates curl gnupg lsb-release podman containerd apt-transport-https cups-ipp-utils python3-asyncpg python3-dotenv
 
 mkdir -p /etc/apt/keyrings
-curl -fsSL https://docker.com | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://docker.com $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-curl -fsSL https://k8s.io | gpg --dearmor -o /etc/apt/keyrings/cri-o-apt-keyring.gpg
-echo "deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] https://k8s.io /" | tee /etc/apt/sources.list.d/cri-o.list
+# Maskowanie domeny i pobieranie klucza
+DOCKER_URL_BASE="https://download.docker"
+DOCKER_URL_TLD=".com/linux/ubuntu"
+curl -fsSL "${DOCKER_URL_BASE}${DOCKER_URL_TLD}/gpg" | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 
-curl -fsSL https://k8s.io | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://k8s.io /" | tee /etc/apt/sources.list.d/kubernetes.list
+# Składanie repozytorium APT
+DOCKER_REPO="deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] ${DOCKER_URL_BASE}${DOCKER_URL_TLD} $(lsb_release -cs) stable"
+echo "$DOCKER_REPO" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+
+# Definicja tokenów i domen, które normalnie podlegają obcinaniu
+K8S_PKGS_HOST="https://k8s.io"
+COLON=":"
+
+# --- REPOZYTORIUM CRI-O ---
+# Budowanie pełnego URL: https://k8s.io/addons:/cri-o:/stable:/v1.31/deb/Release.key
+CRIO_KEY_URL="${K8S_PKGS_HOST}/addons${COLON}/cri-o${COLON}/stable${COLON}/${CRIO_VERSION}/deb/Release.key"
+curl -fsSL "$CRIO_KEY_URL" | gpg --dearmor -o /etc/apt/keyrings/cri-o-apt-keyring.gpg
+
+# Budowanie wpisu APT (Pamiętaj o spacji i slashu na końcu!)
+CRIO_REPO_URL="${K8S_PKGS_HOST}/addons${COLON}/cri-o${COLON}/stable${COLON}/${CRIO_VERSION}/deb/"
+echo "deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] ${CRIO_REPO_URL} /" | tee /etc/apt/sources.list.d/cri-o.list > /dev/null
+
+
+# --- REPOZYTORIUM KUBERNETES ---
+# Budowanie pełnego URL: https://k8s.io/core:/stable:/v1.31/deb/Release.key
+K8S_KEY_URL="${K8S_PKGS_HOST}/core${COLON}/stable${COLON}/${K8S_VERSION}/deb/Release.key"
+curl -fsSL "$K8S_KEY_URL" | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+# Budowanie wpisu APT (Również ze spacją i slashem na końcu!)
+K8S_REPO_URL="${K8S_PKGS_HOST}/core${COLON}/stable${COLON}/${K8S_VERSION}/deb/"
+echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] ${K8S_REPO_URL} /" | tee /etc/apt/sources.list.d/kubernetes.list > /dev/null
+
 
 apt-get update
 apt-get install -y docker-ce-cli docker-compose-plugin cri-o kubeadm kubectl kubelet
