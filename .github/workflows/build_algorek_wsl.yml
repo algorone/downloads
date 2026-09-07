@@ -80,11 +80,10 @@ jobs:
           ### 📦 Zawartość i Wersje komponentów:
           - **Baza OS**: `Ubuntu 24.04 LTS (Noble Numbat)`
           - **Kubernetes CLI & Node (`kubeadm`, `kubectl`, `kubelet`)**: `${{ github.event.inputs.k8s_version }}` (zablokowane przed apt-upgrade)
-          - **Obsługa Swap**: Pełna i przezroczysta. Globalna zmienna `KUBEADM_IGNORE_PREFLIGHT_ERRORS="Swap"` automatycznie pozwala na używanie czystego polecenia `kubeadm init` lub `kubeadm join` wewnątrz WSL.
-          - **Środowisko uruchomieniowe (CRI)**: `CRI-O ${{ github.event.inputs.k8s_version }}` oraz `containerd`
-          - **Zarządzanie kontenerami**: `Podman` (skonfigurowany w trybie rootful z dostępem grupowym)
-          - **Docker API Emulator Gateway**: `DOCKER_HOST` przekierowany globalnie do `/run/podman/podman.sock`
-          - **Docker Narzędzia**: Oficjalne `docker-ce-cli` oraz `docker-compose-plugin` (v2)
+          - **Obsługa Swap**: Pełna i przezroczysta na bazie zmiennej `KUBEADM_IGNORE_PREFLIGHT_ERRORS="Swap"`.
+          - **Natywne środowisko uruchomieniowe**: W pełni oryginalny silnik **Docker Engine** połączony z **Containerd**.
+          - **Natywne współdzielenie obrazów**: Włączona funkcja `containerd-snapshotter` oraz ustawienie `containerd-namespace: "k8s.io"` w demonie Dockera sprawiają, że standardowe polecenie `docker build` buduje obrazy wprost w pamięci klastra bez użycia rejestru zewnętrznego i bez aliasów.
+          - **Docker Narzędzia**: Oryginalne, oficjalne CLI `docker`, wtyczka `docker compose` (v2). Użytkownik automatycznie należy do grupy `docker`.
           - **Pakiety dodatkowe**: `cups-ipp-utils`, `python3-asyncpg`, `python3-dotenv`
           
           ### 🚀 Instrukcja instalacji w systemie Windows:
@@ -96,4 +95,5 @@ jobs:
              ```
              
           *Klaster można zainicjować bezpośrednio standardową komendą:* **`kubeadm init`**
+
         files: algorek-2.0-wsl-${{ github.event.inputs.k8s_version }}.wsl
