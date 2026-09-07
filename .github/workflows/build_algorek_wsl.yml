@@ -1,0 +1,99 @@
+name: Build Algorek-2.0 WSL Distro
+
+on:
+  workflow_dispatch:
+    inputs:
+      k8s_version:
+        description: 'Wersja Kubernetes oraz CRI-O (np. v1.37, v1.37)'
+        required: true
+        default: 'v1.37'
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf "/usr/local/share/boost"
+        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+
+    - name: Download Ubuntu WSL Base Tarball
+      run: |
+        curl -L -o ubuntu-24.04.4-wsl-amd64.tar https://releases.ubuntu.com/noble/ubuntu-24.04.4-wsl-amd64.wsl
+
+    - name: Run Build System
+      run: |
+        mkdir algorek-wsl
+        
+        sudo tar -xpf ubuntu-24.04.4-wsl-amd64.tar -C algorek-wsl --numeric-owner --absolute-names
+        
+        sudo cp -f wsl/wsl-distribution.conf algorek-wsl/etc/wsl-distribution.conf || true
+        sudo cp -f wsl/algorek.ico algorek-wsl/usr/share/wsl/algorek.ico || true
+        sudo cp -f wsl/90_sudoers algorek-wsl/etc/sudoers.d/ || true
+        
+        sudo cp -f wsl/build_script.sh algorek-wsl/tmp/build_script.sh
+        sudo chmod +x algorek-wsl/tmp/build_script.sh
+        
+        sudo mount -t proc /proc algorek-wsl/proc
+        sudo mount --rbind --make-rslave /sys algorek-wsl/sys
+        sudo mount --rbind --make-rslave /dev algorek-wsl/dev
+        sudo mount --rbind --make-rslave /run algorek-wsl/run
+        
+        sudo chroot algorek-wsl /bin/bash /tmp/build_script.sh "${{ github.event.inputs.k8s_version }}"
+        
+        sudo rm -f algorek-wsl/tmp/build_script.sh
+        
+        sudo umount -R algorek-wsl/run
+        sudo umount -R algorek-wsl/dev
+        sudo umount -R algorek-wsl/sys
+        sudo umount algorek-wsl/proc
+        
+        cd algorek-wsl
+        # Zmiana rozszerzenia paczki wyjściowej na .wsl
+        sudo tar --numeric-owner --absolute-names --one-file-system -czvf ../algorek-2.0-wsl-${{ github.event.inputs.k8s_version }}.wsl .
+
+    - name: Generate Unique Tag Name
+      id: tag
+      run: echo "tag_name=v2.0-${{ github.event.inputs.k8s_version }}-$(date +'%Y%m%d%H%M%S')" >> $GITHUB_OUTPUT
+
+    - name: Create GitHub Release and Upload Asset
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ steps.tag.outputs.tag_name }}
+        name: "Release ${{ steps.tag.outputs.tag_name }}"
+        draft: false
+        prerelease: false
+        body: |
+          ## 🐋 Specyfikacja zbudowanej dystrybucji WSL: `algorek-2.0`
+          
+          Wydanie wygenerowane automatycznie na żądanie za pośrednictwem GitHub Actions.
+          
+          ### 📦 Zawartość i Wersje komponentów:
+          - **Baza OS**: `Ubuntu 24.04 LTS (Noble Numbat)`
+          - **Kubernetes CLI & Node (`kubeadm`, `kubectl`, `kubelet`)**: `${{ github.event.inputs.k8s_version }}` (zablokowane przed apt-upgrade)
+          - **Obsługa Swap**: Pełna i przezroczysta. Globalna zmienna `KUBEADM_IGNORE_PREFLIGHT_ERRORS="Swap"` automatycznie pozwala na używanie czystego polecenia `kubeadm init` lub `kubeadm join` wewnątrz WSL.
+          - **Środowisko uruchomieniowe (CRI)**: `CRI-O ${{ github.event.inputs.k8s_version }}` oraz `containerd`
+          - **Zarządzanie kontenerami**: `Podman` (skonfigurowany w trybie rootful z dostępem grupowym)
+          - **Docker API Emulator Gateway**: `DOCKER_HOST` przekierowany globalnie do `/run/podman/podman.sock`
+          - **Docker Narzędzia**: Oficjalne `docker-ce-cli` oraz `docker-compose-plugin` (v2)
+          - **Pakiety dodatkowe**: `cups-ipp-utils`, `python3-asyncpg`, `python3-dotenv`
+          
+          ### 🚀 Instrukcja instalacji w systemie Windows:
+          1. Pobierz załączony plik instalacyjny `algorek-2.0-wsl-${{ github.event.inputs.k8s_version }}.wsl`.
+          2. **Kliknij dwukrotnie pobrany plik** w Eksploratorze plików systemu Windows, aby uruchomić automatyczny kreator instalacji graficznej.
+          3. Po zakończeniu instalacji uruchom dystrybucję bezpośrednio z menu Start lub wpisując w terminalu:
+             ```powershell
+             wsl -d Algorek-2.0
+             ```
+             
+          *Klaster można zainicjować bezpośrednio standardową komendą:* **`kubeadm init`**
+        files: algorek-2.0-wsl-${{ github.event.inputs.k8s_version }}.wsl
