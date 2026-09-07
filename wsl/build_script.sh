@@ -90,14 +90,43 @@ systemctl enable docker
 # --- GLOBALNE ZMIENNE ŚRODOWISKOWE ---
 mkdir -p /etc/profile.d
 cat <<'EOF' > /etc/profile.d/algorek-env.sh
-# Ignorowanie błędów SWAP przy czystym wywołaniu kubeadm init
+# 1. Inteligentne mapowanie interfejsów sieciowych
+# Domyślny interfejs NAT w WSL to zawsze pierwsza karta (zwykle eth0)
+DEFAULT_NAT_IFACE=$(ip route | grep default | awk '{print $5; exit}')
+
+# Szukamy DEDYKOWANEGO interfejsu dla klastra. 
+# Filtrujemy tylko rzeczywiste karty Hyper-V, odrzucając domyślny NAT, pętle i tunele.
+K8S_BRIDGE_IFACE=$(ip -br link | awk -v nat="$DEFAULT_NAT_IFACE" '$1 !~ /lo|sit|tunnel|veth|cni/ && $1 != nat {print $1; exit}')
+
+if [ ! -z "$K8S_BRIDGE_IFACE" ]; then
+    # SCENARIUSZ A: Znaleziono fizyczny, dedykowany mostek klastra (niezależnie od innych kart w systemie)
+    sudo ip link set dev $K8S_BRIDGE_IFACE up 2>/dev/null || true
+    
+    # Czyszczenie starych śmieciowych adresów, jeśli karta wstała z domyślnym IP
+    sudo ip addr flush dev $K8S_BRIDGE_IFACE 2>/dev/null || true
+    
+    # Przypisanie dedykowanego, bezpiecznego adresu IP dla klastra
+    sudo ip addr add 10.88.0.10/24 dev $K8S_BRIDGE_IFACE 2>/dev/null || true
+    export K8S_NODE_IP="10.88.0.10"
+    
+elif [ ! -z "$DEFAULT_NAT_IFACE" ]; then
+    # SCENARIUSZ B: Brak dedykowanego mostka (Deweloper ma 100 innych kart na Windowsie, ale w WSL tylko domyślny NAT)
+    NAT_IP=$(ip -4 addr show "$DEFAULT_NAT_IFACE" | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n 1)
+    export K8S_NODE_IP="$NAT_IP"
+    echo -e "\e[33m[Algorek Info]: Dedykowany mostek klastra niedostępny. Używam lokalnego NAT ($NAT_IP).\e[0m"
+else
+    # SCENARIUSZ C: Całkowity brak sieci wewnątrz WSL
+    export K8S_NODE_IP="127.0.0.1"
+fi
+
+# 2. Stałe i bezpieczne zmienne dla Dockera i Kubeadm
 export KUBEADM_IGNORE_PREFLIGHT_ERRORS="Swap"
 
-# Dostęp do klastra przez kubectl bez użycia sudo po inicjalizacji
 if [ -f /etc/kubernetes/admin.conf ]; then
     export KUBECONFIG=/etc/kubernetes/admin.conf
 fi
 EOF
+
 
 # --- CZYSZCZENIE SYSTEMU I OPTYMALIZACJA ROZMIARU IMAGE ---
 # 1. Usunięcie pobranych archiwów pakietów .deb z pamięci podręcznej APT
