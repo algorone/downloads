@@ -23,7 +23,8 @@ on:
 jobs:
   build:
     runs-on: windows-latest
-
+    permissions:
+      contents: write
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
@@ -169,28 +170,7 @@ jobs:
         New-Item -ItemType Directory -Force -Path "portable_dist\portable\scripts"
         Copy-Item -Path "portable\scripts\start_env.bat" -Destination "portable_dist\portable\scripts\start_env.bat" -Force
 
-    # --- KROK 5: PAKOWANIE I ARTYFAKT Z OPISEM RELEASU ---
-    - name: Compress Entire Distribution
-      shell: powershell
-      run: |
-        Compress-Archive -Path "portable_dist" -DestinationPath "windows-portable-dist.zip" -Force
-
-    - name: Create GitHub Release and Upload Asset
-      uses: softprops/action-gh-release@v2
-      with:
-        files: windows-portable-dist.zip
-        tag_name: "dist-${{ github.run_number }}"
-        name: "Portable Distribution Build #${{ github.run_number }}"
-        body: |
-          ## 📦 Zawartość paczki dystrybucyjnej (Portable)
-
-          Ta dystrybucja została zbudowana automatycznie i zawiera w pełni odizolowane, przenośne środowiska uruchomieniowe dla systemu **Windows x64**.
-
-          ### 🛠️ Komponenty i źródła binariów:
-          * **PostgreSQL 17** 
-            * Źródło bazowe: EDB Binaries ([Pobrano z adresu URL](${{ github.event.inputs.postgres_url }}))
-
-    # --- KROK 5: PAKOWANIE I ARTYFAKT ---
+    # --- KROK 5: PAKOWANIE I ARTEFAKT ---
     - name: Compress Entire Distribution
       shell: powershell
       run: |
@@ -242,7 +222,4 @@ jobs:
           
           ---
           *Automatyczna kompilacja GitHub Actions. ID uruchomienia: ${{ github.run_id }}*
-
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
