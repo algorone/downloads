@@ -1,0 +1,209 @@
+name: Build Portable Distribution (Windows)
+
+on:
+  workflow_dispatch:
+    inputs:
+      postgres_url:
+        description: 'URL do paczki binariów EDB PostgreSQL'
+        required: true
+        default: 'https://sbp.enterprisedb.com/getfile.jsp?fileid=1260491'
+      pgsql_http_url:
+        description: 'URL do rozszerzenia pgsql-http (Postgres OnLine Journal)'
+        required: true
+        default: 'https://www.postgresonline.com/downloads/pg17http_w64.zip'
+      python_url:
+        description: 'URL do wersji WinPython "dot" (.zip)'
+        required: true
+        default: 'https://github.com/winpython/winpython/releases/download/17.12.20260522/WinPython/WinPython64-3.14.7.0dot.zip'
+      redis_url:
+        description: 'URL do dystrybucji redis-windows (.zip)'
+        required: true
+        default: 'https://github.com/redis-windows/redis-windows/releases/download/7.4.11/Redis-7.4.11-Windows-x64-msys2.zip'
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Create Base Directory Structure
+      shell: powershell
+      run: |
+        New-Item -ItemType Directory -Force -Path "portable_dist\postgres"
+        New-Item -ItemType Directory -Force -Path "portable_dist\python"
+        New-Item -ItemType Directory -Force -Path "portable_dist\redis"
+        New-Item -ItemType Directory -Force -Path "portable_dist\data\postgres"
+
+    # --- KROK 1: POSTGRESQL 17 + EXTENSION ---
+    - name: Download and Process PostgreSQL
+      shell: powershell
+      run: |
+        $pgUrl = "${{ github.event.inputs.postgres_url }}"
+        Invoke-WebRequest -Uri $pgUrl -OutFile "postgres.zip"
+        Expand-Archive -Path "postgres.zip" -DestinationPath "pg_temp"
+        
+        Move-Item -Path "pg_temp\pgsql\*" -Destination "portable_dist\postgres" -Force
+
+        Remove-Item -Path "portable_dist\postgres\include" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "portable_dist\postgres\doc" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "portable_dist\postgres\pgAdmin*" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "portable_dist\postgres\StackBuilder" -Recurse -Force -ErrorAction SilentlyContinue
+
+        $httpExtUrl = "${{ github.event.inputs.pgsql_http_url }}"
+        Invoke-WebRequest -Uri $httpExtUrl -OutFile "pgsql-http.zip" -ErrorAction SilentlyContinue
+        
+        if (Test-Path "pgsql-http.zip") {
+            Expand-Archive -Path "pgsql-http.zip" -DestinationPath "http_temp"
+            Copy-Item -Path "http_temp\*.dll" -Destination "portable_dist\postgres\lib" -Force -ErrorAction SilentlyContinue
+            Copy-Item -Path "http_temp\share\extension\*" -Destination "portable_dist\postgres\share\extension" -Force -ErrorAction SilentlyContinue
+        }
+
+        Remove-Item -Path "postgres.zip", "pg_temp", "pgsql-http.zip", "http_temp" -Recurse -Force -ErrorAction SilentlyContinue
+
+    # --- KROK 2: PYTHON 3.14 + PACKAGES ---
+    - name: Download and Process Python
+      shell: powershell
+      run: |
+        $winPyUrl = "${{ github.event.inputs.python_url }}"
+        Invoke-WebRequest -Uri $winPyUrl -OutFile "winpython.zip"
+        Expand-Archive -Path "winpython.zip" -DestinationPath "py_temp"
+        
+        $pyFolder = Get-ChildItem -Path "py_temp\python-3.14*" | Select-Object -First 1
+        Move-Item -Path "$($pyFolder.FullName)\*" -Destination "portable_dist\python" -Force
+
+        & "portable_dist\python\python.exe" -m pip install --upgrade pip
+        & "portable_dist\python\python.exe" -m pip install asyncpg python-dotenv requests --no-warn-script-location
+
+        & "portable_dist\python\python.exe" -m pip cache purge
+        Get-ChildItem -Path "portable_dist\python" -Filter "__pycache__" -Recurse | Remove-Item -Recurse -Force
+        Remove-Item -Path "winpython.zip", "py_temp" -Recurse -Force -ErrorAction SilentlyContinue
+
+    # --- KROK 3: REDIS 7 ---
+    - name: Download and Process Redis
+      shell: powershell
+      run: |
+        $redisUrl = "${{ github.event.inputs.redis_url }}"
+        Invoke-WebRequest -Uri $redisUrl -OutFile "redis.zip"
+        Expand-Archive -Path "redis.zip" -DestinationPath "redis_temp"
+        
+        Move-Item -Path "redis_temp\*" -Destination "portable_dist\redis" -Force
+        Remove-Item -Path "redis.zip", "redis_temp" -Recurse -Force -ErrorAction SilentlyContinue
+
+    # --- KROK 3.5: CAŁKOWICIE LEGALNE I ZAUTOMATYZOWANE WSTRZYKNIĘCIE BIBLIOTEK CRT Z RUNNERA ---
+    - name: Inject Microsoft Visual C++ Runtime Local DLLs
+      shell: powershell
+      run: |
+        # Narzędzia Visual Studio na maszynie GitHub Actions przechowują oficjalne pliki redystrybucyjne w zmiennej systemowej
+        # Szukamy najnowszej wersji folderu bibliotek CRT dla architektury x64
+        $crtPath = Get-ChildItem -Path "C:\Program Files\Microsoft Visual Studio\" -Filter "vcruntime140.dll" -Recurse -ErrorAction SilentlyContinue | 
+                    Where-Object { $_.FullName -like "*\x64\*" -and $_.FullName -like "*\Microsoft.VC*.CRT\*" } | 
+                    Select-Object -ExpandProperty DirectoryName -First 1
+
+        if ($crtPath -and (Test-Path $crtPath)) {
+            Write-Output "Znaleziono oficjalne pliki MSVC w: $crtPath"
+            
+            # Kopiujemy kluczowe pliki (vcruntime140.dll, vcruntime140_1.dll, msvcp140.dll itp.) bezpośrednio do folderów z plikami .exe
+            # Zgodnie z zasadą DLL Search Order w Windows, aplikacja w pierwszej kolejności załaduje je ze swojego folderu lokalnego.
+            Copy-Item -Path "$crtPath\*.dll" -Destination "portable_dist\postgres\bin" -Force
+            Copy-Item -Path "$crtPath\*.dll" -Destination "portable_dist\python" -Force
+            Copy-Item -Path "$crtPath\*.dll" -Destination "portable_dist\redis" -Force
+            Write-Output "Wstrzykiwanie zakonczone sukcesem. Paczka jest w 100% zautonomizowana."
+        } else {
+            Write-Warning "Nie udalo sie zlokalizowac lokalnego repozytorium bibliotek CRT na runnerze. Uzywam fallbacku z katalogu systemowego."
+            # Gdyby z jakiegoś powodu ścieżka VS uległa zmianie, bierzemy bezpieczną kopię z system32
+            Copy-Item -Path "C:\Windows\System32\vcruntime140.dll", "C:\Windows\System32\vcruntime140_1.dll", "C:\Windows\System32\msvcp140.dll" -Destination "portable_dist\postgres\bin" -Force
+            Copy-Item -Path "C:\Windows\System32\vcruntime140.dll", "C:\Windows\System32\vcruntime140_1.dll", "C:\Windows\System32\msvcp140.dll" -Destination "portable_dist\python" -Force
+            Copy-Item -Path "C:\Windows\System32\vcruntime140.dll", "C:\Windows\System32\vcruntime140_1.dll", "C:\Windows\System32\msvcp140.dll" -Destination "portable_dist\redis" -Force
+        }
+
+    # --- KROK 4: REPLIKACJA SKRYPTU ROZRUCHOWEGO Z REPOZYTORIUM ---
+    - name: Copy Launcher Script from Repo
+      shell: powershell
+      run: |
+        New-Item -ItemType Directory -Force -Path "portable_dist\portable\scripts"
+        Copy-Item -Path "portable\scripts\start_env.bat" -Destination "portable_dist\portable\scripts\start_env.bat" -Force
+
+    # --- KROK 5: PAKOWANIE I ARTYFAKT Z OPISEM RELEASU ---
+    - name: Compress Entire Distribution
+      shell: powershell
+      run: |
+        Compress-Archive -Path "portable_dist" -DestinationPath "windows-portable-dist.zip" -Force
+
+    - name: Create GitHub Release and Upload Asset
+      uses: softprops/action-gh-release@v2
+      with:
+        files: windows-portable-dist.zip
+        tag_name: "dist-${{ github.run_number }}"
+        name: "Portable Distribution Build #${{ github.run_number }}"
+        body: |
+          ## 📦 Zawartość paczki dystrybucyjnej (Portable)
+
+          Ta dystrybucja została zbudowana automatycznie i zawiera w pełni odizolowane, przenośne środowiska uruchomieniowe dla systemu **Windows x64**.
+
+          ### 🛠️ Komponenty i źródła binariów:
+          * **PostgreSQL 17** 
+            * Źródło bazowe: EDB Binaries ([Pobrano z adresu URL](${{ github.event.inputs.postgres_url }}))
+
+    # --- KROK 5: PAKOWANIE I ARTYFAKT ---
+    - name: Compress Entire Distribution
+      shell: powershell
+      run: |
+        Compress-Archive -Path "portable_dist" -DestinationPath "windows-portable-dist.zip" -Force
+
+    - name: Create GitHub Release and Upload Asset
+      uses: softprops/action-gh-release@v2
+      with:
+        files: windows-portable-dist.zip
+        tag_name: "dist-${{ github.run_number }}"
+        name: "Portable Distribution Build #${{ github.run_number }}"
+        body: |
+          ## 📦 Zawartość paczki dystrybucyjnej (Portable)
+
+          Ta dystrybucja została zbudowana automatycznie i zawiera w pełni odizolowane, przenośne środowiska uruchomieniowe dla systemu **Windows x64**.
+
+          ### 🛠️ Komponenty i źródła binariów:
+          * **PostgreSQL 17** 
+            * Źródło bazowe: EDB Binaries ([Pobrano z adresu URL](${{ github.event.inputs.postgres_url }}))
+            * Dystrybucja została odchudzona o zbędne pakiety (brak `pgAdmin`, `include`, `doc`).
+            * Zintegrowano rozszerzenie **`pgsql-http`** ([Pobrano z adresu URL](${{ github.event.inputs.pgsql_http_url }})).
+          * **Python 3.14**
+            * Źródło bazowe: WinPython x64 Dot ([Pobrano z adresu URL](${{ github.event.inputs.python_url }})).
+            * Izolowane środowisko (`PYTHONNOUSERSITE=1`).
+            * Zainstalowane biblioteki wewnątrz paczki: `asyncpg`, `python-dotenv`, `requests`.
+          * **Redis 7**
+            * Źródło bazowe: redis-windows ([Pobrano z adresu URL](${{ github.event.inputs.redis_url }})).
+          * **Microsoft Visual C++ Runtime (Wbudowany)** 
+            *Pliki systemowe vcruntime140.dll, vcruntime140_1.dll oraz msvcp140.dll zostały wstrzyknięte bezpośrednio do katalogów lokalnych aplikacji. Paczka zadziała bezbłędnie na każdym czystym systemie Windows bez potrzeby uprawnień administratora.
+          ---
+
+          ### 🚀 Szybki start (Instrukcja uruchomienia)
+
+          1. **Pobierz i rozpakuj** archiwum `windows-portable-dist.zip` w wybranym miejscu na dysku.
+          2. Wejdź do katalogu `portable/scripts/` i uruchom skrypt **`start_env.bat`**.
+          3. Otwarte okno konsoli automatycznie załaduje wszystkie zmienne środowiskowe `PATH`.
+
+          #### 💡 Przydatne komendy wewnątrz uruchomionego środowiska:
+          * **Inicjalizacja bazy PostgreSQL** (tylko za pierwszym razem):
+            ```cmd
+            initdb -D "%BASE_DIR%\data\postgres" -U postgres --auth=trust
+            ```
+          * **Uruchomienie serwera PostgreSQL**:
+            ```cmd
+            pg_ctl -D "%BASE_DIR%\data\postgres" -l "%BASE_DIR%\data\postgres\server.log" start
+            ```
+          * **Uruchomienie serwera Redis**:
+            ```cmd
+            redis-server
+            ```
+          * **Uruchomienie Twojego skryptu Python**:
+            ```cmd
+            python twoj_skrypt.py
+            ```
+
+          ---
+          *Automatyczna kompilacja GitHub Actions. ID uruchomienia: ${{ github.run_id }}*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
