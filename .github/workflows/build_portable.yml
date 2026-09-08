@@ -36,72 +36,109 @@ jobs:
         New-Item -ItemType Directory -Force -Path "portable_dist\redis"
         New-Item -ItemType Directory -Force -Path "portable_dist\data\postgres"
 
+    # =========================================================================
+    # KROK 1: PYTHON (Zoptymalizowany pod kątem ścieżek bezwzględnych i Robocopy)
+    # =========================================================================
+    - name: Cache Python Environment
+      id: cache-python
+      uses: actions/cache@v4
+      with:
+        path: portable_dist\python
+        key: py-${{ github.event.inputs.python_url }}-v2
 
-    # --- KROK 1: POSTGRESQL 17 + EXTENSION ---
-    - name: Download and Process PostgreSQL
-      shell: powershell
-      run: |
-        $pgUrl = "${{ github.event.inputs.postgres_url }}"
-        Invoke-WebRequest -Uri $pgUrl -OutFile "postgres.zip"
-        Expand-Archive -Path "postgres.zip" -DestinationPath "pg_temp"
-        
-        # Przeniesienie za pomocą robocopy dla stabilności I/O
-        Move-Item -Path "pg_temp\pgsql\*" -Destination "portable_dist\postgres" -Force
-
-        # Odchudzanie dystrybucji EDB
-        Remove-Item -Path "portable_dist\postgres\include" -Recurse -Force -ErrorAction SilentlyContinue
-        Remove-Item -Path "portable_dist\postgres\doc" -Recurse -Force -ErrorAction SilentlyContinue
-        Remove-Item -Path "portable_dist\postgres\pgAdmin*" -Recurse -Force -ErrorAction SilentlyContinue
-        Remove-Item -Path "portable_dist\postgres\StackBuilder" -Recurse -Force -ErrorAction SilentlyContinue
-
-        # Pobranie i integracja rozszerzenia pgsql-http
-        $httpExtUrl = "${{ github.event.inputs.pgsql_http_url }}"
-        Invoke-WebRequest -Uri $httpExtUrl -OutFile "pgsql-http.zip" -ErrorAction SilentlyContinue
-        
-        if (Test-Path "pgsql-http.zip") {
-            Expand-Archive -Path "pgsql-http.zip" -DestinationPath "http_temp"
-            Copy-Item -Path "http_temp\*.dll" -Destination "portable_dist\postgres\lib" -Force -ErrorAction SilentlyContinue
-            Copy-Item -Path "http_temp\share\extension\*" -Destination "portable_dist\postgres\share\extension" -Force -ErrorAction SilentlyContinue
-        }
-
-        Remove-Item -Path "postgres.zip", "pg_temp", "pgsql-http.zip", "http_temp" -Recurse -Force -ErrorAction SilentlyContinue
-
-    # --- KROK 2: PYTHON 3.14 + PACKAGES (ROBOCOPY FIX) ---
     - name: Download and Process Python
+      if: steps.cache-python.outputs.cache-hit != 'true'
       shell: powershell
       run: |
         $winPyUrl = "${{ github.event.inputs.python_url }}"
         Invoke-WebRequest -Uri $winPyUrl -OutFile "winpython.zip"
         Expand-Archive -Path "winpython.zip" -DestinationPath "py_temp"
         
-        # Pobranie dokładnej ścieżki do źródła rozpakowanego folderu Pythona
-        $pyFolder = Get-ChildItem -Path "py_temp\python-3.14*" | Select-Object -First 1
-        
-        # Użycie Robocopy w stylu Microsoft (omija blokady plików)
-        robocopy "$($pyFolder.FullName)" "portable_dist\python" /MOVE /E /NDL /NFL /NJH /NJS
-        
-        # Resetowanie kodu wyjścia - kody <= 3 oznaczają sukces w Robocopy
+        # Uniwersalne i bezpieczne wyciągnięcie pełnej ścieżki (niezależne od podwersji)
+        $pySourceFolder = Get-ChildItem -Path "$pwd\py_temp\python-*" | 
+                          Where-Object { $_.PSIsContainer } | 
+                          Select-Object -ExpandProperty FullName -First 1
+
+        if (-not $pySourceFolder) {
+            Write-Error "CRITICAL ERROR: Nie znaleziono katalogu Pythona wewnątrz py_temp!"
+            exit 1
+        }
+
+        $pyTargetFolder = "$pwd\portable_dist\python"
+        Write-Output "Przenoszenie z: $pySourceFolder do: $pyTargetFolder"
+
+        # Robocopy w stylu MS - omija blokady deskryptorów plików
+        robocopy "$pySourceFolder" "$pyTargetFolder" /MOVE /E /NDL /NFL /NJH /NJS
         if ($LASTEXITCODE -le 3) { $global:LASTEXITCODE = 0 }
 
-        # Instalacja pip-packages (DODANO PYDANTIC)
-        & "portable_dist\python\python.exe" -m pip install --upgrade pip
-        & "portable_dist\python\python.exe" -m pip install asyncpg python-dotenv requests pydantic --no-warn-script-location
+        # Instalacja pakietów (w tym pydantic) przez jawną ścieżkę .exe
+        $pythonExe = "$pyTargetFolder\python.exe"
+        & "$pythonExe" -m pip install --upgrade pip
+        & "$pythonExe" -m pip install asyncpg python-dotenv requests pydantic --no-warn-script-location
 
-        # Czyszczenie cache i plików tymczasowych kompilacji Pythona
-        & "portable_dist\python\python.exe" -m pip cache purge
-        Get-ChildItem -Path "portable_dist\python" -Filter "__pycache__" -Recurse | Remove-Item -Recurse -Force
+        # Czyszczenie śmieci
+        & "$pythonExe" -m pip cache purge
+        Get-ChildItem -Path "$pyTargetFolder" -Filter "__pycache__" -Recurse | Remove-Item -Recurse -Force
         Remove-Item -Path "winpython.zip", "py_temp" -Recurse -Force -ErrorAction SilentlyContinue
 
-    # --- KROK 3: REDIS 7 ---
+    # =========================================================================
+    # KROK 2: REDIS
+    # =========================================================================
+    - name: Cache Redis
+      id: cache-redis
+      uses: actions/cache@v4
+      with:
+        path: portable_dist\redis
+        key: redis-${{ github.event.inputs.redis_url }}
+
     - name: Download and Process Redis
+      if: steps.cache-redis.outputs.cache-hit != 'true'
       shell: powershell
       run: |
         $redisUrl = "${{ github.event.inputs.redis_url }}"
         Invoke-WebRequest -Uri $redisUrl -OutFile "redis.zip"
         Expand-Archive -Path "redis.zip" -DestinationPath "redis_temp"
         
-        Move-Item -Path "redis_temp\*" -Destination "portable_dist\redis" -Force
+        Move-Item -Path "redis_temp\*" -Destination "$pwd\portable_dist\redis" -Force
         Remove-Item -Path "redis.zip", "redis_temp" -Recurse -Force -ErrorAction SilentlyContinue
+
+    # =========================================================================
+    # KROK 3: POSTGRESQL + EXTENSION
+    # =========================================================================
+    - name: Cache PostgreSQL 
+      id: cache-postgres
+      uses: actions/cache@v4
+      with:
+        path: portable_dist\postgres
+        key: pg-${{ github.event.inputs.postgres_url }}-${{ github.event.inputs.pgsql_http_url }}
+
+    - name: Download and Process PostgreSQL
+      if: steps.cache-postgres.outputs.cache-hit != 'true'
+      shell: powershell
+      run: |
+        $pgUrl = "${{ github.event.inputs.postgres_url }}"
+        Invoke-WebRequest -Uri $pgUrl -OutFile "postgres.zip"
+        Expand-Archive -Path "postgres.zip" -DestinationPath "pg_temp"
+        
+        Move-Item -Path "pg_temp\pgsql\*" -Destination "$pwd\portable_dist\postgres" -Force
+
+        # Odchudzanie dystrybucji EDB
+        Remove-Item -Path "$pwd\portable_dist\postgres\include" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "$pwd\portable_dist\postgres\doc" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "$pwd\portable_dist\postgres\pgAdmin*" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "$pwd\portable_dist\postgres\StackBuilder" -Recurse -Force -ErrorAction SilentlyContinue
+
+        # Integracja rozszerzenia pgsql-http
+        $httpExtUrl = "${{ github.event.inputs.pgsql_http_url }}"
+        Invoke-WebRequest -Uri $httpExtUrl -OutFile "pgsql-http.zip" -ErrorAction SilentlyContinue
+        
+        if (Test-Path "pgsql-http.zip") {
+            Expand-Archive -Path "pgsql-http.zip" -DestinationPath "http_temp"
+            Copy-Item -Path "http_temp\*.dll" -Destination "$pwd\portable_dist\postgres\lib" -Force -ErrorAction SilentlyContinue
+            Copy-Item -Path "http_temp\share\extension\*" -Destination "$pwd\portable_dist\postgres\share\extension" -Force -ErrorAction SilentlyContinue
+        }
+
+        Remove-Item -Path "postgres.zip", "pg_temp", "pgsql-http.zip", "http_temp" -Recurse -Force -ErrorAction SilentlyContinue
 
     # --- KROK 3.5: AUTOMATYCZNE WSTRZYKNIĘCIE BIBLIOTEK CRT Z RUNNERA ---
     - name: Inject Microsoft Visual C++ Runtime Local DLLs
@@ -169,13 +206,13 @@ jobs:
           Ta dystrybucja została zbudowana automatycznie i zawiera w pełni odizolowane, przenośne środowiska uruchomieniowe dla systemu **Windows x64**.
 
           ### 🛠️ Komponenty i źródła binariów:
-          * **PostgreSQL 17** 
+          * **PostgreSQL** 
             * Źródło bazowe: EDB Binaries ([Pobrano z adresu URL](${{ github.event.inputs.postgres_url }}))
             * Zintegrowano rozszerzenie **`pgsql-http`** ([Pobrano z adresu URL](${{ github.event.inputs.pgsql_http_url }})).
-          * **Python 3.14**
+          * **Python 3**
             * Źródło bazowe: WinPython x64 Dot ([Pobrano z adresu URL](${{ github.event.inputs.python_url }})).
             * Zainstalowane biblioteki wewnątrz paczki: `asyncpg`, `python-dotenv`, `requests`, **`pydantic`**.
-          * **Redis 7**
+          * **Redis**
             * Źródło bazowe: redis-windows ([Pobrano z adresu URL](${{ github.event.inputs.redis_url }})).
           * **Microsoft Visual C++ Runtime (Wbudowany)**
             * Pliki systemowe `vcruntime140.dll`, `vcruntime140_1.dll` oraz `msvcp140.dll` zostały **wstrzyknięte bezpośrednio do katalogów lokalnych aplikacji**. Paczka zadziała bezbłędnie na każdym czystym systemie Windows bez potrzeby uprawnień administratora.
