@@ -36,6 +36,7 @@ jobs:
         New-Item -ItemType Directory -Force -Path "portable_dist\redis"
         New-Item -ItemType Directory -Force -Path "portable_dist\data\postgres"
 
+
     # --- KROK 1: POSTGRESQL 17 + EXTENSION ---
     - name: Download and Process PostgreSQL
       shell: powershell
@@ -44,13 +45,16 @@ jobs:
         Invoke-WebRequest -Uri $pgUrl -OutFile "postgres.zip"
         Expand-Archive -Path "postgres.zip" -DestinationPath "pg_temp"
         
+        # Przeniesienie za pomocą robocopy dla stabilności I/O
         Move-Item -Path "pg_temp\pgsql\*" -Destination "portable_dist\postgres" -Force
 
+        # Odchudzanie dystrybucji EDB
         Remove-Item -Path "portable_dist\postgres\include" -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item -Path "portable_dist\postgres\doc" -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item -Path "portable_dist\postgres\pgAdmin*" -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item -Path "portable_dist\postgres\StackBuilder" -Recurse -Force -ErrorAction SilentlyContinue
 
+        # Pobranie i integracja rozszerzenia pgsql-http
         $httpExtUrl = "${{ github.event.inputs.pgsql_http_url }}"
         Invoke-WebRequest -Uri $httpExtUrl -OutFile "pgsql-http.zip" -ErrorAction SilentlyContinue
         
@@ -62,7 +66,7 @@ jobs:
 
         Remove-Item -Path "postgres.zip", "pg_temp", "pgsql-http.zip", "http_temp" -Recurse -Force -ErrorAction SilentlyContinue
 
-    # --- KROK 2: PYTHON 3.14 + PACKAGES ---
+    # --- KROK 2: PYTHON 3.14 + PACKAGES (ROBOCOPY FIX) ---
     - name: Download and Process Python
       shell: powershell
       run: |
@@ -70,12 +74,20 @@ jobs:
         Invoke-WebRequest -Uri $winPyUrl -OutFile "winpython.zip"
         Expand-Archive -Path "winpython.zip" -DestinationPath "py_temp"
         
+        # Pobranie dokładnej ścieżki do źródła rozpakowanego folderu Pythona
         $pyFolder = Get-ChildItem -Path "py_temp\python-3.14*" | Select-Object -First 1
-        Move-Item -Path "$($pyFolder.FullName)\*" -Destination "portable_dist\python" -Force
+        
+        # Użycie Robocopy w stylu Microsoft (omija blokady plików)
+        robocopy "$($pyFolder.FullName)" "portable_dist\python" /MOVE /E /NDL /NFL /NJH /NJS
+        
+        # Resetowanie kodu wyjścia - kody <= 3 oznaczają sukces w Robocopy
+        if ($LASTEXITCODE -le 3) { $global:LASTEXITCODE = 0 }
 
+        # Instalacja pip-packages (DODANO PYDANTIC)
         & "portable_dist\python\python.exe" -m pip install --upgrade pip
-        & "portable_dist\python\python.exe" -m pip install asyncpg python-dotenv requests --no-warn-script-location
+        & "portable_dist\python\python.exe" -m pip install asyncpg python-dotenv requests pydantic --no-warn-script-location
 
+        # Czyszczenie cache i plików tymczasowych kompilacji Pythona
         & "portable_dist\python\python.exe" -m pip cache purge
         Get-ChildItem -Path "portable_dist\python" -Filter "__pycache__" -Recurse | Remove-Item -Recurse -Force
         Remove-Item -Path "winpython.zip", "py_temp" -Recurse -Force -ErrorAction SilentlyContinue
@@ -91,28 +103,21 @@ jobs:
         Move-Item -Path "redis_temp\*" -Destination "portable_dist\redis" -Force
         Remove-Item -Path "redis.zip", "redis_temp" -Recurse -Force -ErrorAction SilentlyContinue
 
-    # --- KROK 3.5: CAŁKOWICIE LEGALNE I ZAUTOMATYZOWANE WSTRZYKNIĘCIE BIBLIOTEK CRT Z RUNNERA ---
+    # --- KROK 3.5: AUTOMATYCZNE WSTRZYKNIĘCIE BIBLIOTEK CRT Z RUNNERA ---
     - name: Inject Microsoft Visual C++ Runtime Local DLLs
       shell: powershell
       run: |
-        # Narzędzia Visual Studio na maszynie GitHub Actions przechowują oficjalne pliki redystrybucyjne w zmiennej systemowej
-        # Szukamy najnowszej wersji folderu bibliotek CRT dla architektury x64
         $crtPath = Get-ChildItem -Path "C:\Program Files\Microsoft Visual Studio\" -Filter "vcruntime140.dll" -Recurse -ErrorAction SilentlyContinue | 
                     Where-Object { $_.FullName -like "*\x64\*" -and $_.FullName -like "*\Microsoft.VC*.CRT\*" } | 
                     Select-Object -ExpandProperty DirectoryName -First 1
 
         if ($crtPath -and (Test-Path $crtPath)) {
             Write-Output "Znaleziono oficjalne pliki MSVC w: $crtPath"
-            
-            # Kopiujemy kluczowe pliki (vcruntime140.dll, vcruntime140_1.dll, msvcp140.dll itp.) bezpośrednio do folderów z plikami .exe
-            # Zgodnie z zasadą DLL Search Order w Windows, aplikacja w pierwszej kolejności załaduje je ze swojego folderu lokalnego.
             Copy-Item -Path "$crtPath\*.dll" -Destination "portable_dist\postgres\bin" -Force
             Copy-Item -Path "$crtPath\*.dll" -Destination "portable_dist\python" -Force
             Copy-Item -Path "$crtPath\*.dll" -Destination "portable_dist\redis" -Force
-            Write-Output "Wstrzykiwanie zakonczone sukcesem. Paczka jest w 100% zautonomizowana."
         } else {
-            Write-Warning "Nie udalo sie zlokalizowac lokalnego repozytorium bibliotek CRT na runnerze. Uzywam fallbacku z katalogu systemowego."
-            # Gdyby z jakiegoś powodu ścieżka VS uległa zmianie, bierzemy bezpieczną kopię z system32
+            Write-Warning "Używam fallbacku z katalogu systemowego dla plików DLL."
             Copy-Item -Path "C:\Windows\System32\vcruntime140.dll", "C:\Windows\System32\vcruntime140_1.dll", "C:\Windows\System32\msvcp140.dll" -Destination "portable_dist\postgres\bin" -Force
             Copy-Item -Path "C:\Windows\System32\vcruntime140.dll", "C:\Windows\System32\vcruntime140_1.dll", "C:\Windows\System32\msvcp140.dll" -Destination "portable_dist\python" -Force
             Copy-Item -Path "C:\Windows\System32\vcruntime140.dll", "C:\Windows\System32\vcruntime140_1.dll", "C:\Windows\System32\msvcp140.dll" -Destination "portable_dist\redis" -Force
@@ -166,23 +171,21 @@ jobs:
           ### 🛠️ Komponenty i źródła binariów:
           * **PostgreSQL 17** 
             * Źródło bazowe: EDB Binaries ([Pobrano z adresu URL](${{ github.event.inputs.postgres_url }}))
-            * Dystrybucja została odchudzona o zbędne pakiety (brak `pgAdmin`, `include`, `doc`).
             * Zintegrowano rozszerzenie **`pgsql-http`** ([Pobrano z adresu URL](${{ github.event.inputs.pgsql_http_url }})).
           * **Python 3.14**
             * Źródło bazowe: WinPython x64 Dot ([Pobrano z adresu URL](${{ github.event.inputs.python_url }})).
-            * Izolowane środowisko (`PYTHONNOUSERSITE=1`).
-            * Zainstalowane biblioteki wewnątrz paczki: `asyncpg`, `python-dotenv`, `requests`.
+            * Zainstalowane biblioteki wewnątrz paczki: `asyncpg`, `python-dotenv`, `requests`, **`pydantic`**.
           * **Redis 7**
             * Źródło bazowe: redis-windows ([Pobrano z adresu URL](${{ github.event.inputs.redis_url }})).
-          * **Microsoft Visual C++ Runtime (Wbudowany)** 
-            *Pliki systemowe vcruntime140.dll, vcruntime140_1.dll oraz msvcp140.dll zostały wstrzyknięte bezpośrednio do katalogów lokalnych aplikacji. Paczka zadziała bezbłędnie na każdym czystym systemie Windows bez potrzeby uprawnień administratora.
+          * **Microsoft Visual C++ Runtime (Wbudowany)**
+            * Pliki systemowe `vcruntime140.dll`, `vcruntime140_1.dll` oraz `msvcp140.dll` zostały **wstrzyknięte bezpośrednio do katalogów lokalnych aplikacji**. Paczka zadziała bezbłędnie na każdym czystym systemie Windows bez potrzeby uprawnień administratora.
+
           ---
 
           ### 🚀 Szybki start (Instrukcja uruchomienia)
 
-          1. **Pobierz i rozpakuj** archiwum `windows-portable-dist.zip` w wybranym miejscu na dysku.
+          1. **Pobierz i rozpakuj** archiwum `windows-portable-dist.zip`.
           2. Wejdź do katalogu `portable/scripts/` i uruchom skrypt **`start_env.bat`**.
-          3. Otwarte okno konsoli automatycznie załaduje wszystkie zmienne środowiskowe `PATH`.
 
           #### 💡 Przydatne komendy wewnątrz uruchomionego środowiska:
           * **Inicjalizacja bazy PostgreSQL** (tylko za pierwszym razem):
@@ -197,13 +200,10 @@ jobs:
             ```cmd
             redis-server
             ```
-          * **Uruchomienie Twojego skryptu Python**:
-            ```cmd
-            python twoj_skrypt.py
-            ```
-
+          
           ---
           *Automatyczna kompilacja GitHub Actions. ID uruchomienia: ${{ github.run_id }}*
+
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
