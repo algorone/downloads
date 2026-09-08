@@ -37,14 +37,14 @@ jobs:
         New-Item -ItemType Directory -Force -Path "portable_dist\data\postgres"
 
     # =========================================================================
-    # KROK 1: PYTHON (Zoptymalizowany pod kątem ścieżek bezwzględnych i Robocopy)
+    # KROK 1: PYTHON (Dostosowany pod dokładną nazwę podfolderu "python")
     # =========================================================================
     - name: Cache Python Environment
       id: cache-python
       uses: actions/cache@v4
       with:
         path: portable_dist\python
-        key: py-${{ github.event.inputs.python_url }}-v2
+        key: py-${{ github.event.inputs.python_url }}-v4 # Podbicie klucza dla świeżego buildu
 
     - name: Download and Process Python
       if: steps.cache-python.outputs.cache-hit != 'true'
@@ -54,29 +54,31 @@ jobs:
         Invoke-WebRequest -Uri $winPyUrl -OutFile "winpython.zip"
         Expand-Archive -Path "winpython.zip" -DestinationPath "py_temp"
         
-        # Uniwersalne i bezpieczne wyciągnięcie pełnej ścieżki (niezależne od podwersji)
-        $pySourceFolder = Get-ChildItem -Path "$pwd\py_temp\python-*" | 
-                          Where-Object { $_.PSIsContainer } | 
-                          Select-Object -ExpandProperty FullName -First 1
-
-        if (-not $pySourceFolder) {
-            Write-Error "CRITICAL ERROR: Nie znaleziono katalogu Pythona wewnątrz py_temp!"
+        # 1. Zlokalizowanie głównego folderu kontenera WinPython (np. WPy64-31470)
+        $containerFolder = Get-ChildItem -Path "$pwd\py_temp" | Where-Object { $_.PSIsContainer } | Select-Object -ExpandProperty FullName -First 1
+        
+        # 2. Mapowanie bezpośredniej ścieżki do czystego podfolderu "python"
+        $pySourceFolder = "$containerFolder\python"
+        $pyTargetFolder = "$pwd\portable_dist\python"
+        
+        if (-not (Test-Path $pySourceFolder)) {
+            Write-Error "CRITICAL ERROR: Nie znaleziono oczekiwanego katalogu '$pySourceFolder'!"
             exit 1
         }
 
-        $pyTargetFolder = "$pwd\portable_dist\python"
-        Write-Output "Przenoszenie z: $pySourceFolder do: $pyTargetFolder"
+        Write-Output "Zrodlo Pythona zlokalizowane w: $pySourceFolder"
+        Write-Output "Przenoszenie do celu: $pyTargetFolder"
 
-        # Robocopy w stylu MS - omija blokady deskryptorów plików
+        # 3. Kopiowanie za pomocą Robocopy
         robocopy "$pySourceFolder" "$pyTargetFolder" /MOVE /E /NDL /NFL /NJH /NJS
         if ($LASTEXITCODE -le 3) { $global:LASTEXITCODE = 0 }
 
-        # Instalacja pakietów (w tym pydantic) przez jawną ścieżkę .exe
+        # 4. Instalacja pakietów asynchronicznych i pydantic za pomocą dokładnej ścieżki .exe
         $pythonExe = "$pyTargetFolder\python.exe"
         & "$pythonExe" -m pip install --upgrade pip
         & "$pythonExe" -m pip install asyncpg python-dotenv requests pydantic --no-warn-script-location
 
-        # Czyszczenie śmieci
+        # 5. Czyszczenie śmieci
         & "$pythonExe" -m pip cache purge
         Get-ChildItem -Path "$pyTargetFolder" -Filter "__pycache__" -Recurse | Remove-Item -Recurse -Force
         Remove-Item -Path "winpython.zip", "py_temp" -Recurse -Force -ErrorAction SilentlyContinue
