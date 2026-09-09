@@ -4,7 +4,7 @@ LABEL org.opencontainers.image.description="Ubuntu: liberoffice, tesseract-ocr, 
 LABEL org.opencontainers.image.licenses=GPL
 RUN apt update && apt install -y poppler-utils 
 RUN apt install -y tesseract-ocr tesseract-ocr-pol 
-RUN apt -y -q install libreoffice \
+RUN apt update && apt -y -q install libreoffice \
 RUN apt-get clean && apt-get autoclean
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 RUN mkdir /workspace
