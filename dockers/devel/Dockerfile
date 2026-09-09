@@ -1,9 +1,9 @@
 FROM ubuntu:noble
-RUN apt update && apt install -y poppler-utils \
-&& apt install -y tesseract-ocr tesseract-ocr-pol \ 
-&& apt install fonts-liberation \
-&& apt -y -q install libreoffice \
-&& apt-get clean && apt-get autoclean
+RUN apt update && apt install -y poppler-utils 
+RUN apt install -y tesseract-ocr tesseract-ocr-pol 
+# RUN apt install fonts-liberation 
+# RUN apt -y -q install libreoffice \
+RUN apt-get clean && apt-get autoclean
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 RUN mkdir /workspace
 WORKDIR /workspace
