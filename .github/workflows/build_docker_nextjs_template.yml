@@ -1,0 +1,83 @@
+name: "Template: Remote NextJS Multi-Arch Build (Method 1)"
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'dockers/aplikacjaNext/**'
+
+# =========================================================================
+# JAWNA KONFIGURACJA SZABLONU - ZMIENNE ŚRODOWISKOWE
+# =========================================================================
+env:
+  ORG_NAME: "organizacja"              # Nazwa organizacji na GitHubie
+  APP_NAME: "aplikacjaNext"           # Nazwa docelowego pakietu w GHCR (ghcr.io/organizacja/aplikacjaNext)
+  
+  # Repozytorium z kodem źródłowym (Monorepo)
+  SRC_REPOSITORY: "organizacja/apps"  
+  SRC_BRANCH: "main"                  
+  SRC_COMPONENT_PATH: "aplikacjaNext"  # Podfolder w monorepo, gdzie znajduje się package.json
+  
+  # Parametry specyficzne dla wdrożenia aplikacji Next.js
+  NEXT_PUBLIC_BASE_PATH: "/ezd"       # Ścieżka bazowa aplikacji (wypalana podczas buildu)
+  DOCKERFILE_PATH: "./dockers/aplikacjaNext/Dockerfile"
+# =========================================================================
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      # 1. Pobieramy pliki konfiguracyjne Dockera (organizacja/download)
+      - name: Checkout download/dockers config
+        uses: actions/checkout@v4
+
+      # 2. Pobieramy kod źródłowy Next.js (organizacja/apps)
+      - name: Checkout remote apps monorepo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SRC_REPOSITORY }}
+          ref: ${{ env.SRC_BRANCH }}
+          token: ${{ secrets.APPS_MONOREPO_TOKEN }}
+          path: 'source-repo'
+
+      # 3. Modyfikujemy konfigurację Next.js lokalnym skryptem z katalogu download
+      - name: Execute prepare script for Next.js
+        run: |
+          chmod +x ./dockers/${{ env.APP_NAME }}/prepare.sh
+          ./dockers/${{ env.APP_NAME }}/prepare.sh ./source-repo/${{ env.SRC_COMPONENT_PATH }}
+        env:
+          NEXT_PUBLIC_BASE_PATH: ${{ env.NEXT_PUBLIC_BASE_PATH }}
+
+      # 4. Konfiguracja emulatorów dla Multi-Arch (amd64 + arm64)
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 5. Logowanie do rejestru organizacji GHCR za pomocą GITHUB_TOKEN
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 6. Budowanie i wysyłka obrazu zbiorczego
+      - name: Build and push Multi-Arch Docker Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ env.DOCKERFILE_PATH }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:${{ github.sha }}
+            ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:latest
+          build-args: |
+            SRC_COMPONENT_PATH=${{ env.SRC_COMPONENT_PATH }}
