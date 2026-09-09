@@ -1,0 +1,165 @@
+name: "Template: Remote Native Multi-Arch Build"
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    # Szablon reaguje na zmiany w katalogu konfiguracyjnym konkretnej aplikacji
+    paths:
+      - 'dockers/aplikacjaA/**' 
+
+# =========================================================================
+# KONFIGURACJA SZABLONU - TUTAJ DEFINIUJESZ ZMIENNE DLA NOWEJ APLIKACJI
+# =========================================================================
+env:
+  ORG_NAME: "algorone"              # Nazwa Twojej organizacji na GitHubie
+  APP_NAME: "aplikacjaA"              # Nazwa komponentu / aplikacji (docelowy pakiet GHCR)
+  
+  # Repozytorium z kodem źródłowym (Monorepo)
+  SRC_REPOSITORY: "algorone/algorek"  
+  SRC_BRANCH: "main"                  
+  SRC_COMPONENT_PATH: "aplikacjaA"     # Podfolder w monorepo, gdzie znajduje się pom.xml
+  
+  # Plik wykonywalny i konfiguracja środowiska
+  BINARY_NAME: "store-srv"            # Nazwa pliku wyjściowego generowanego przez Maven w /target
+  JAVA_VERSION: "21"                  # Wersja Javy wymagana przez GraalVM
+  GRAAL_DIST: "graalvm"               # Dystrybucja GraalVM (np. graalvm, mandrel)
+  
+  # Konfiguracja Dockera
+  DOCKERFILE_PATH: "./dockers/aplikacjaA/Dockerfile"
+# =========================================================================
+
+jobs:
+  # KROK 1: Budowanie Native Image pod AMD64 (Maszyna x86_64)
+  build-amd64:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout download/dockers config
+        uses: actions/checkout@v4
+
+      - name: Checkout remote apps monorepo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SRC_REPOSITORY }}
+          ref: ${{ env.SRC_BRANCH }}
+          token: ${{ secrets.APPS_MONOREPO_TOKEN }}
+          path: 'source-repo'
+
+      - name: Set up GraalVM
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.GRAAL_DIST }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache: 'maven'
+
+      - name: Run build script inside component folder
+        run: |
+          cd source-repo/${{ env.SRC_COMPONENT_PATH }}
+          chmod +x ./build.sh
+          ./build.sh
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push AMD64 Docker Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ env.DOCKERFILE_PATH }}
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:${{ github.sha }}-amd64
+          # Przekazujemy zmienną BINARY_NAME do Dockerfile, jeśli chcemy uniwersalny Dockerfile
+          build-args: |
+            BINARY_NAME=${{ env.BINARY_NAME }}
+            SRC_COMPONENT_PATH=${{ env.SRC_COMPONENT_PATH }}
+
+  # KROK 2: Budowanie Native Image pod ARM64 (Darmowy natywny runner GitHub ARM)
+  build-arm64:
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout download/dockers config
+        uses: actions/checkout@v4
+
+      - name: Checkout remote apps monorepo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SRC_REPOSITORY }}
+          ref: ${{ env.SRC_BRANCH }}
+          token: ${{ secrets.APPS_MONOREPO_TOKEN }}
+          path: 'source-repo'
+
+      - name: Set up GraalVM
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.GRAAL_DIST }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache: 'maven'
+
+      - name: Run build script inside component folder
+        run: |
+          cd source-repo/${{ env.SRC_COMPONENT_PATH }}
+          chmod +x ./build.sh
+          ./build.sh
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ARM64 Docker Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ env.DOCKERFILE_PATH }}
+          platforms: linux/arm64
+          push: true
+          tags: ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:${{ github.sha }}-arm64
+          build-args: |
+            BINARY_NAME=${{ env.BINARY_NAME }}
+            SRC_COMPONENT_PATH=${{ env.SRC_COMPONENT_PATH }}
+
+  # KROK 3: Połączenie w jeden spłaszczony Multi-Arch Manifest
+  create-manifest:
+    runs-on: ubuntu-latest
+    needs: [build-amd64, build-arm64]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Link and push Multi-Arch Manifest
+        run: |
+          # Manifest dla SHA commitu
+          docker manifest create ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:${{ github.sha }} \
+            --amend ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:${{ github.sha }}-amd64 \
+            --amend ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:${{ github.sha }}-arm64
+          
+          # Manifest dla tagu 'latest'
+          docker manifest create ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:latest \
+            --amend ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:${{ github.sha }}-amd64 \
+            --amend ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:${{ github.sha }}-arm64
+          
+          docker manifest push ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:${{ github.sha }}
+          docker manifest push ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:latest
