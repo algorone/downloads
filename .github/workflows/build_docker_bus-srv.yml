@@ -40,7 +40,7 @@ jobs:
         with:
           repository: ${{ env.SRC_REPOSITORY }}
           ref: ${{ env.SRC_BRANCH }}
-          token: ${{ secrets.APPS_MONOREPO_TOKEN }}
+          # token: ${{ secrets.APPS_MONOREPO_TOKEN }}
           path: 'source-repo'
 
       - name: Set up GraalVM
@@ -92,7 +92,7 @@ jobs:
         with:
           repository: ${{ env.SRC_REPOSITORY }}
           ref: ${{ env.SRC_BRANCH }}
-          token: ${{ secrets.APPS_MONOREPO_TOKEN }}
+          # token: ${{ secrets.APPS_MONOREPO_TOKEN }}
           path: 'source-repo'
 
       - name: Set up GraalVM
