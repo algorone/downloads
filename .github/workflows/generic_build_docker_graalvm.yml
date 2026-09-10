@@ -6,7 +6,7 @@ on:
       app_name:
         description: 'nazwa budowanego sersisu '
         required: true
-        default: 'appA'      
+        default: 'app-srv'      
       src_branch:
         description: 'nazwa brancha lub tagu do budowy w SRC_REPOSITORY'
         required: false
@@ -17,19 +17,19 @@ on:
 # =========================================================================
 env:
   ORG_NAME: "algorone"       
-  APP_NAME: "${{ app_name }}"
+  APP_NAME: "${{ inputs.app_name }}"
   
   # Repozytorium z kodem źródłowym (Monorepo)
   SRC_REPOSITORY: "algorone/algorek"  
   SRC_BRANCH: "${{ inputs.src_branch }}"               
-  SRC_COMPONENT_PATH: "appA"     # Podfolder w monorepo, gdzie znajduje się pom.xml
+  SRC_COMPONENT_PATH: "${{ inputs.app_name }}"    
   
   # Plik wykonywalny i konfiguracja środowiska
-  JAVA_VERSION: "21"                  # Wersja Javy wymagana przez GraalVM
+  JAVA_VERSION: "21"  
   GRAAL_DIST: "graalvm"               # Dystrybucja GraalVM (np. graalvm, mandrel)
   
   # Konfiguracja Dockera
-  DOCKERFILE_PATH: "./dockers/${{ app_name }}/Dockerfile"
+  DOCKERFILE_PATH: "./dockers/${{ inputs.app_name }}/Dockerfile"
 # =========================================================================
 
 jobs:
