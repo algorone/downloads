@@ -29,7 +29,7 @@ env:
   GRAAL_DIST: "graalvm"               # Dystrybucja GraalVM (np. graalvm, mandrel)
   
   # Konfiguracja Dockera
-  DOCKERFILE_PATH: "./dockers/${{ app_name }}/Dockerfile"
+  DOCKERFILE_PATH: "./dockers/${{ inputs.app_name }}/Dockerfile"
 # =========================================================================
 
 jobs:
