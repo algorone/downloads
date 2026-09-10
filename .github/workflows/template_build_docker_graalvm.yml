@@ -1,33 +1,35 @@
-name: "Template: Remote Native Multi-Arch Build"
+name: "Generic algorek servie Native Multi-Arch Build"
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    # Szablon reaguje na zmiany w katalogu konfiguracyjnym konkretnej aplikacji
-    paths:
-      - 'dockers/aplikacjaA/**' 
+    inputs:
+      app_name:
+        description: 'nazwa budowanego sersisu '
+        required: true
+        default: 'appA'      
+      src_branch:
+        description: 'nazwa brancha lub tagu do budowy w SRC_REPOSITORY'
+        required: false
+        default: 'main'
 
 # =========================================================================
 # KONFIGURACJA SZABLONU - TUTAJ DEFINIUJESZ ZMIENNE DLA NOWEJ APLIKACJI
 # =========================================================================
 env:
-  ORG_NAME: "algorone"              # Nazwa Twojej organizacji na GitHubie
-  APP_NAME: "aplikacjaA"              # Nazwa komponentu / aplikacji (docelowy pakiet GHCR)
+  ORG_NAME: "algorone"       
+  APP_NAME: "${{ app_name }}"
   
   # Repozytorium z kodem źródłowym (Monorepo)
   SRC_REPOSITORY: "algorone/algorek"  
-  SRC_BRANCH: "main"                  
-  SRC_COMPONENT_PATH: "aplikacjaA"     # Podfolder w monorepo, gdzie znajduje się pom.xml
+  SRC_BRANCH: "${{ inputs.src_branch }}"               
+  SRC_COMPONENT_PATH: "appA"     # Podfolder w monorepo, gdzie znajduje się pom.xml
   
   # Plik wykonywalny i konfiguracja środowiska
-  BINARY_NAME: "store-srv"            # Nazwa pliku wyjściowego generowanego przez Maven w /target
   JAVA_VERSION: "21"                  # Wersja Javy wymagana przez GraalVM
   GRAAL_DIST: "graalvm"               # Dystrybucja GraalVM (np. graalvm, mandrel)
   
   # Konfiguracja Dockera
-  DOCKERFILE_PATH: "./dockers/aplikacjaA/Dockerfile"
+  DOCKERFILE_PATH: "./dockers/${{ app_name }}/Dockerfile"
 # =========================================================================
 
 jobs:
@@ -46,7 +48,6 @@ jobs:
         with:
           repository: ${{ env.SRC_REPOSITORY }}
           ref: ${{ env.SRC_BRANCH }}
-          token: ${{ secrets.APPS_MONOREPO_TOKEN }}
           path: 'source-repo'
 
       - name: Set up GraalVM
@@ -78,10 +79,6 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:${{ github.sha }}-amd64
-          # Przekazujemy zmienną BINARY_NAME do Dockerfile, jeśli chcemy uniwersalny Dockerfile
-          build-args: |
-            BINARY_NAME=${{ env.BINARY_NAME }}
-            SRC_COMPONENT_PATH=${{ env.SRC_COMPONENT_PATH }}
 
   # KROK 2: Budowanie Native Image pod ARM64 (Darmowy natywny runner GitHub ARM)
   build-arm64:
@@ -98,7 +95,7 @@ jobs:
         with:
           repository: ${{ env.SRC_REPOSITORY }}
           ref: ${{ env.SRC_BRANCH }}
-          token: ${{ secrets.APPS_MONOREPO_TOKEN }}
+          # token: ${{ secrets.APPS_MONOREPO_TOKEN }}
           path: 'source-repo'
 
       - name: Set up GraalVM
@@ -130,9 +127,7 @@ jobs:
           platforms: linux/arm64
           push: true
           tags: ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:${{ github.sha }}-arm64
-          build-args: |
-            BINARY_NAME=${{ env.BINARY_NAME }}
-            SRC_COMPONENT_PATH=${{ env.SRC_COMPONENT_PATH }}
+
 
   # KROK 3: Połączenie w jeden spłaszczony Multi-Arch Manifest
   create-manifest:
