@@ -3,6 +3,6 @@ COPY source-repo/pki-srv/target/pki-srv*with-dependencies.jar /pki-fat.jar
 ENV PKI_HTTP_PORT=8036
 ENV OBJECT_STORE_URL=http://localhost:8033
 RUN mkdir -p /usr/share/fonts/truetype/liberation2/
-COPY LiberationSans-Italic.ttf /usr/share/fonts/truetype/liberation2/LiberationSans-Italic.ttf
+COPY dockers/pki-srv/LiberationSans-Italic.ttf /usr/share/fonts/truetype/liberation2/LiberationSans-Italic.ttf
 WORKDIR /
 CMD ["java", "-jar", "pki-fat.jar"]
