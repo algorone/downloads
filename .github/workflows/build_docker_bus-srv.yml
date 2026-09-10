@@ -1,4 +1,4 @@
-name: "Bus-ser Native Multi-Arch Build"
+name: "bus-srv Native Multi-Arch Build"
 
 on:
   workflow_dispatch:
@@ -40,7 +40,6 @@ jobs:
         with:
           repository: ${{ env.SRC_REPOSITORY }}
           ref: ${{ env.SRC_BRANCH }}
-          # token: ${{ secrets.APPS_MONOREPO_TOKEN }}
           path: 'source-repo'
 
       - name: Set up GraalVM
@@ -72,10 +71,6 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:${{ github.sha }}-amd64
-          # Przekazujemy zmienną BINARY_NAME do Dockerfile, jeśli chcemy uniwersalny Dockerfile
-          build-args: |
-            BINARY_NAME=${{ env.BINARY_NAME }}
-            SRC_COMPONENT_PATH=${{ env.SRC_COMPONENT_PATH }}
 
   # KROK 2: Budowanie Native Image pod ARM64 (Darmowy natywny runner GitHub ARM)
   build-arm64:
@@ -124,9 +119,9 @@ jobs:
           platforms: linux/arm64
           push: true
           tags: ghcr.io/${{ env.ORG_NAME }}/${{ env.APP_NAME }}:${{ github.sha }}-arm64
-          build-args: |
-            BINARY_NAME=${{ env.BINARY_NAME }}
-            SRC_COMPONENT_PATH=${{ env.SRC_COMPONENT_PATH }}
+          # build-args: |
+          #   BINARY_NAME=${{ env.BINARY_NAME }}
+          #   SRC_COMPONENT_PATH=${{ env.SRC_COMPONENT_PATH }}
 
   # KROK 3: Połączenie w jeden spłaszczony Multi-Arch Manifest
   create-manifest:
