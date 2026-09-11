@@ -98,7 +98,7 @@ jobs:
         working-directory: ${{ env.SRC_COMPONENT_PATH }}
         shell: bash
         run: |
-          tar -a -c -f ${{ env.APP_NAME }}.zip dist-windows
+          tar.exe -caf ${{ env.APP_NAME }}.zip dist-windows
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
