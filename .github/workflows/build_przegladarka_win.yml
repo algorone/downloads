@@ -1,0 +1,107 @@
+name: "Przegladarka dokumentow dla Windows"
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: 'nazwa budowanego serwisu'
+        required: true
+        default: 'przegladarka'      
+      src_branch:
+        description: 'nazwa brancha lub tagu do budowy w SRC_REPOSITORY'
+        required: false
+        default: 'main'
+
+# =========================================================================
+# KONFIGURACJA SZABLONU - TUTAJ DEFINIUJESZ ZMIENNE DLA NOWEJ APLIKACJI
+# =========================================================================
+env:
+  ORG_NAME: "algorone"       
+  APP_NAME: "${{ inputs.app_name }}"
+  
+  # Repozytorium z kodem źródłowym (Monorepo)
+  SRC_REPOSITORY: "algorone/algorek"  
+  SRC_BRANCH: "${{ inputs.src_branch }}"               
+  SRC_COMPONENT_PATH: "source-repo/${{ inputs.app_name }}/gui"    
+# =========================================================================
+
+jobs:
+  build-windows-dist:
+    runs-on: windows-latest 
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Checkout remote apps monorepo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SRC_REPOSITORY }}
+          ref: ${{ env.SRC_BRANCH }}
+          path: 'source-repo'
+
+      - name: Setup Node.js (do samego procesu budowania)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: ${{ env.SRC_COMPONENT_PATH }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ env.SRC_COMPONENT_PATH }}
+        run: npm ci # Natywnie instaluje wszystkie biblioteki pod system Windows!
+
+      - name: Build Next.js application
+        working-directory: ${{ env.SRC_COMPONENT_PATH }}
+        run: npm run build
+
+      # - name: Download Node.js Portable for Windows
+      #   working-directory: ${{ env.SRC_COMPONENT_PATH }}
+      #   shell: bash
+      #   run: |
+      #     # Pobieramy portable wersję Node (poprawny oficjalny URL dystrybucyjny)
+      #     curl -OL https://nodejs.org
+      #     unzip node-v20.11.0-win-x64.zip
+      #     mv node-v20.11.0-win-x64 node-env
+      #     rm node-v20.11.0-win-x64.zip
+
+      - name: Prepare Windows Package
+        working-directory: ${{ env.SRC_COMPONENT_PATH }}
+        shell: bash
+        run: |
+          # Tworzymy ostateczną strukturę katalogu
+          mkdir -p dist-windows
+          # cp -r node-env dist-windows/node-env
+          cp -r .next/standalone/. dist-windows/
+          cp -r public dist-windows/public
+          cp -r .next/static dist-windows/.next/static
+
+      # - name: Create Windows Launch Script
+      #   working-directory: ${{ env.SRC_COMPONENT_PATH }}
+      #   shell: bash
+      #   run: |
+      #     # Generujemy plik .bat dla klienta końcowego
+      #     cat << 'EOF' > dist-windows/Uruchom.bat
+      #     @echo off
+      #     setlocal
+      #     title Serwer Next.js 15 - ${{ env.APP_NAME }}
+      #     set PATH=%~dp0node-env;%PATH%
+      #     set NODE_ENV=production
+      #     set PORT=3000
+      #     echo Uruchamianie aplikacji...
+      #     start http://localhost:3000
+      #     node server.js
+      #     pause
+      #     endlocal
+      #     EOF
+
+      - name: Zip the Windows Distribution
+        working-directory: ${{ env.SRC_COMPONENT_PATH }}
+        shell: bash
+        run: |
+          tar -a -c -f ${{ env.APP_NAME }}.zip dist-windows
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-windows-dist
+          path: ${{ env.SRC_COMPONENT_PATH }}/${{ env.APP_NAME }}.zip
