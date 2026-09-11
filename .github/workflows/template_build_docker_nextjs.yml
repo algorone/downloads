@@ -34,11 +34,11 @@ jobs:
     steps:
       # 1. Pobieramy pliki konfiguracyjne Dockera (organizacja/download)
       - name: Checkout download/dockers config
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # 2. Pobieramy kod źródłowy Next.js (organizacja/apps)
       - name: Checkout remote apps monorepo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ${{ env.SRC_REPOSITORY }}
           ref: ${{ env.SRC_BRANCH }}

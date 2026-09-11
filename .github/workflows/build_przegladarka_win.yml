@@ -65,7 +65,7 @@ jobs:
           cp -r .next/static dist-windows/.next/static
 
       - name: Upload Windows Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ env.APP_NAME }}-windows-dist
           path: ${{ env.SRC_COMPONENT_PATH }}/dist-windows
