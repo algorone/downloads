@@ -48,7 +48,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: ${{ env.SRC_COMPONENT_PATH }}
-        run: npm ci # Natywnie instaluje wszystkie biblioteki pod system Windows!
+        run: npm ci --verbose
 
       - name: Build Next.js application
         working-directory: ${{ env.SRC_COMPONENT_PATH }}
