@@ -30,39 +30,29 @@ jobs:
     runs-on: windows-latest 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Checkout remote apps monorepo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ${{ env.SRC_REPOSITORY }}
           ref: ${{ env.SRC_BRANCH }}
           path: 'source-repo'
 
       - name: Setup Node.js (do samego procesu budowania)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: ${{ env.SRC_COMPONENT_PATH }}/package-lock.json
 
       - name: Install dependencies
         working-directory: ${{ env.SRC_COMPONENT_PATH }}
-        run: npm ci # Natywnie instaluje wszystkie biblioteki pod system Windows!
+        run: npm ci --verbose
 
       - name: Build Next.js application
         working-directory: ${{ env.SRC_COMPONENT_PATH }}
         run: npm run build
-
-      # - name: Download Node.js Portable for Windows
-      #   working-directory: ${{ env.SRC_COMPONENT_PATH }}
-      #   shell: bash
-      #   run: |
-      #     # Pobieramy portable wersję Node (poprawny oficjalny URL dystrybucyjny)
-      #     curl -OL https://nodejs.org
-      #     unzip node-v20.11.0-win-x64.zip
-      #     mv node-v20.11.0-win-x64 node-env
-      #     rm node-v20.11.0-win-x64.zip
 
       - name: Prepare Windows Package
         working-directory: ${{ env.SRC_COMPONENT_PATH }}
@@ -70,38 +60,13 @@ jobs:
         run: |
           # Tworzymy ostateczną strukturę katalogu
           mkdir -p dist-windows
-          # cp -r node-env dist-windows/node-env
           cp -r .next/standalone/. dist-windows/
           cp -r public dist-windows/public
           cp -r .next/static dist-windows/.next/static
 
-      # - name: Create Windows Launch Script
-      #   working-directory: ${{ env.SRC_COMPONENT_PATH }}
-      #   shell: bash
-      #   run: |
-      #     # Generujemy plik .bat dla klienta końcowego
-      #     cat << 'EOF' > dist-windows/Uruchom.bat
-      #     @echo off
-      #     setlocal
-      #     title Serwer Next.js 15 - ${{ env.APP_NAME }}
-      #     set PATH=%~dp0node-env;%PATH%
-      #     set NODE_ENV=production
-      #     set PORT=3000
-      #     echo Uruchamianie aplikacji...
-      #     start http://localhost:3000
-      #     node server.js
-      #     pause
-      #     endlocal
-      #     EOF
-
-      - name: Zip the Windows Distribution
-        working-directory: ${{ env.SRC_COMPONENT_PATH }}
-        shell: bash
-        run: |
-          tar -a -c -f ${{ env.APP_NAME }}.zip dist-windows
-
       - name: Upload Windows Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ env.APP_NAME }}-windows-dist
-          path: ${{ env.SRC_COMPONENT_PATH }}/${{ env.APP_NAME }}.zip
+          path: ${{ env.SRC_COMPONENT_PATH }}/dist-windows
+

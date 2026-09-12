@@ -41,10 +41,10 @@ jobs:
       packages: write
     steps:
       - name: Checkout download/dockers config
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Checkout remote apps monorepo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ${{ env.SRC_REPOSITORY }}
           ref: ${{ env.SRC_BRANCH }}
@@ -88,10 +88,10 @@ jobs:
       packages: write
     steps:
       - name: Checkout download/dockers config
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Checkout remote apps monorepo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ${{ env.SRC_REPOSITORY }}
           ref: ${{ env.SRC_BRANCH }}

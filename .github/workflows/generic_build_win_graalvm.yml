@@ -1,0 +1,80 @@
+name: "Generic windows mvn graalvm"
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: 'nazwa budowanego serwisu '
+        required: true
+        default: 'app-srv'      
+      src_branch:
+        description: 'nazwa brancha lub tagu do budowy w SRC_REPOSITORY'
+        required: false
+        default: 'main'
+      build_native:
+        description: 'czy wykonac akcje: mvn -Pnative package'
+        required: false
+        type: boolean
+        default: true
+
+# =========================================================================
+# KONFIGURACJA SZABLONU - TUTAJ DEFINIUJESZ ZMIENNE DLA NOWEJ APLIKACJI
+# =========================================================================
+env:
+  ORG_NAME: "algorone"       
+  APP_NAME: "${{ inputs.app_name }}"
+  
+  # Repozytorium z kodem źródłowym (Monorepo)
+  SRC_REPOSITORY: "algorone/algorek"  
+  SRC_BRANCH: "${{ inputs.src_branch }}"               
+  SRC_COMPONENT_PATH: "source-repo/${{ inputs.app_name }}"    
+  
+  # Plik wykonywalny i konfiguracja środowiska
+  JAVA_VERSION: "21"  
+  GRAAL_DIST: "graalvm"               # Dystrybucja GraalVM (np. graalvm, mandrel)
+  
+# =========================================================================
+
+jobs:
+  build-and-push:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      packages: write 
+    steps:
+      - name: Checkout download/dockers config
+        uses: actions/checkout@v6
+
+      - name: Checkout remote apps monorepo
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ env.SRC_REPOSITORY }}
+          ref: ${{ env.SRC_BRANCH }}
+          path: 'source-repo'
+
+      - name: Set up GraalVM
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.GRAAL_DIST }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache: 'maven'
+
+      - name: Run mavn clean install
+        working-directory: ${{ env.SRC_COMPONENT_PATH }}
+        shell: cmd 
+        run: |
+          mvn clean install
+
+      - name: Run mvn -Pnative package
+        if: ${{ inputs.build_native }}  
+        working-directory: ${{ env.SRC_COMPONENT_PATH }}
+        shell: cmd 
+        run: |
+          mvn -Pnative package
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ env.APP_NAME }}-windows-dist
+          path: ${{ env.SRC_COMPONENT_PATH }}/target/${{ env.APP_NAME }}*

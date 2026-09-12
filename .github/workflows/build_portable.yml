@@ -27,7 +27,7 @@ jobs:
       contents: write
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - name: Create Base Directory Structure
       shell: powershell
@@ -42,7 +42,7 @@ jobs:
     # =========================================================================
     - name: Cache Python Environment
       id: cache-python
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: portable_dist\python
         key: py-${{ github.event.inputs.python_url }}-v4 # Podbicie klucza dla świeżego buildu
@@ -89,7 +89,7 @@ jobs:
     # =========================================================================
     - name: Cache Redis
       id: cache-redis
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: portable_dist\redis
         key: redis-${{ github.event.inputs.redis_url }}
@@ -110,7 +110,7 @@ jobs:
     # =========================================================================
     - name: Cache PostgreSQL 
       id: cache-postgres
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: portable_dist\postgres
         key: pg-${{ github.event.inputs.postgres_url }}-${{ github.event.inputs.pgsql_http_url }}
