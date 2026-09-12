@@ -30,11 +30,18 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write # Wymagane dla GITHUB_TOKEN
+      packages: write 
     steps:
-      # 1. Pobieramy zawartość naszego repozytorium
       - name: Checkout repository
         uses: actions/checkout@v6
+
+      - name: Checkout remote apps monorepo
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ env.SRC_REPOSITORY }}
+          ref: ${{ env.SRC_BRANCH }}
+          path: 'source-repo'
+
         
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
