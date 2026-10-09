@@ -3,7 +3,8 @@ WORKDIR /work/
 RUN chown 1001 /work \
     && chmod "g+rwX" /work \
     && chown 1001:root /work
-COPY --chown=1001:root --chmod=0755 target/*-runner /work/application
+
+COPY --chown=1001:root --chmod=0755 source-repo/indeks-ezd/target/*-runner /work/application
 
 EXPOSE 8080
 USER 1001
