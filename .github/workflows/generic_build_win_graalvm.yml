@@ -6,7 +6,11 @@ on:
       app_name:
         description: 'nazwa budowanego serwisu '
         required: true
-        default: 'app-srv'      
+        default: 'app-srv'
+      src_repository:
+        description: 'nazwa repozytorium w ramach organizacji algorone'
+        required: false
+        default: 'algorek'    
       src_branch:
         description: 'nazwa brancha lub tagu do budowy w SRC_REPOSITORY'
         required: false
@@ -25,7 +29,7 @@ env:
   APP_NAME: "${{ inputs.app_name }}"
   
   # Repozytorium z kodem źródłowym (Monorepo)
-  SRC_REPOSITORY: "algorone/algorek"  
+  SRC_REPOSITORY: "algorone/${{ inputs.src_repository }}" 
   SRC_BRANCH: "${{ inputs.src_branch }}"               
   SRC_COMPONENT_PATH: "source-repo/${{ inputs.app_name }}"    
   
