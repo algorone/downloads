@@ -5,11 +5,9 @@
 Algorek-2.0 to dystrybucja Windows Subsytem Linux [WSL](https://learn.microsoft.com/en-us/windows/wsl/) oprata na dystrybucji [Ubuntu](https://ubuntu.com/wsl), z dodakowo zainstalowanymi komponentami.
 - **Baza OS**: `Ubuntu 24.04 LTS (Noble Numbat)`
 - **Kubernetes CLI & Node (`kubeadm`, `kubectl`, `kubelet`)**
-- **Środowisko uruchomieniowe (CRI)**: `CRI-O ${{ github.event.inputs.k8s_version }}` oraz `containerd`
-- **Zarządzanie kontenerami**: `Podman` (skonfigurowany w trybie rootful z dostępem grupowym)
-- **Docker API Emulator Gateway**: `DOCKER_HOST` przekierowany globalnie do `/run/podman/podman.sock`
-- **Docker Narzędzia**: Oficjalne `docker-ce-cli` oraz `docker-compose-plugin` (v2)
-- **Pakiety dodatkowe**: `cups-ipp-utils`, `python3-asyncpg`, `python3-dotenv`
+- **Docker CE** 
+- **Ansible**
+- **Pakiety dodatkowe**: `cups-ipp-utils`, `qemu-utils`, `python3-asyncpg`, `python3-dotenv`, `python3-yaml`, `python3-kubernetes`
 
 
 Uruchomienie WSL jako konto systemowe (zablokowane na twardo dla SYSTEM), czy start jako “Network Account“ nie działa poprawnie, lub nie spełnia kluczowego warunku pełnego dostepu do WSL po zalogowaniu się opiekuna robota na komputerze gospodarza. Jako rozwiązanie stabilne i zrozumiałe pozostaje opcja “autologon“ dedykowanego użytkonika `algorek`.
