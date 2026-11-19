@@ -19,7 +19,7 @@ K8S_VERSION="$TARGET_VERSION"
 
 # Podstawowe pakiety systemowe
 apt-get update
-apt-get install -y ca-certificates curl gnupg lsb-release apt-transport-https cups-ipp-utils python3-asyncpg python3-dotenv
+apt-get install -y ca-certificates curl gnupg lsb-release apt-transport-https cups-ipp-utils python3-asyncpg python3-dotenv python3-yaml python3-kubernetes unzip ansible qemu-utils xorriso
 
 # --- 1. ZABEZPIECZONE REPOZYTORIUM DOCKER (DLA SILNIKA DOCKER-CE I CONTAINERD) ---
 mkdir -p /etc/apt/keyrings
@@ -37,6 +37,13 @@ apt-get update
 # Instalujemy pełny silnik Dockera (docker-ce) wraz z klientem oraz Kubernetes
 apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin kubeadm kubectl kubelet
 apt-mark hold kubelet kubeadm kubectl
+
+# -- Podstawowe paczki ANSIBLE
+ansible-galaxy collection install community.general
+ansible-galaxy collection install community.postgresql
+ansible-galaxy collection install community.rabbitmq
+ansible-galaxy collection install community.docker
+ansible-galaxy collection install kubernetes.core 
 
 # --- AUTOMATYZACJA UPRAWNIEŃ UŻYTKOWNIKA ---
 # Wymuszenie dodawania nowych użytkowników WSL do grupy sudo oraz grupy docker (w pełni natywnej)
